@@ -352,7 +352,7 @@ func FuzzUpdateProofRemove(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		pollardBeforeStr := p.String()
+		pollardBeforeStr := String(&p)
 
 		// Grab the current leaves that exist in the accumulator.
 		currentLeaves := hashAndPos{make([]uint64, 0, len(leaves)-len(delHashes)), make([]Hash, 0, len(leaves)-len(delHashes))}
@@ -424,7 +424,7 @@ func FuzzUpdateProofRemove(f *testing.F) {
 				"Got targets:\n%v\nPollard before:\n%s\nPollard after:\n%s\n",
 				cachedTargetsAndHash.Len(), len(cachedProof.Targets), blockProof.Targets,
 				origTargetsAndHash.String(), cachedTargetsAndHash.String(),
-				cachedProof.Targets, pollardBeforeStr, p.String())
+				cachedProof.Targets, pollardBeforeStr, String(&p))
 		}
 
 		shouldBeEmpty := hashAndPos{make([]uint64, cachedTargetsAndHash.Len()), make([]Hash, cachedTargetsAndHash.Len())}
@@ -438,7 +438,7 @@ func FuzzUpdateProofRemove(f *testing.F) {
 			t.Fatalf("FuzzUpdateProofRemove Fail. Expected hashes:\n%s\nbut got:\n%s\n"+
 				"Pollard before:\n%s\nPollard after:\n%s\n",
 				printHashes(cachedTargetsAndHash.hashes), printHashes(shouldBeEmpty.hashes),
-				pollardBeforeStr, p.String())
+				pollardBeforeStr, String(&p))
 		}
 
 		cachedProofPos, _ := proofPositions(cachedProof.Targets, p.NumLeaves, treeRows(p.NumLeaves))
@@ -449,7 +449,7 @@ func FuzzUpdateProofRemove(f *testing.F) {
 				"Pollard before:\n%s\nPollard after:\n%s\n",
 				printHashes(cachedProof.Proof), cachedProof.Targets, cachedProofPos,
 				origTargetsAndHash.String(),
-				pollardBeforeStr, p.String())
+				pollardBeforeStr, String(&p))
 		}
 
 		// And verify that the proof is correct.
@@ -459,7 +459,7 @@ func FuzzUpdateProofRemove(f *testing.F) {
 				"Proof:\n%s\nTarget hashes:\n%s\n"+
 				"Pollard before:\n%s\nPollard after:\n%s\n", err,
 				cachedProof.String(), printHashes(leafSubset.hashes),
-				pollardBeforeStr, p.String())
+				pollardBeforeStr, String(&p))
 		}
 	})
 }
@@ -550,13 +550,13 @@ func FuzzUpdateProofAdd(f *testing.F) {
 
 		leafSubset.hashes = cachedProof.updateProofAdd(addHashes, leafSubset.hashes, nil, newNodes, p.NumLeaves, toDestroy)
 
-		beforePollardStr := p.String()
+		beforePollardStr := String(&p)
 		// Modify the pollard.
 		err = p.Modify(addLeaves, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		afterPollardStr := p.String()
+		afterPollardStr := String(&p)
 
 		// And verify that the proof is correct.
 		err = p.Verify(leafSubset.hashes, cachedProof)

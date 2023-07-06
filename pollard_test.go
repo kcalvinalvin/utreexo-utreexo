@@ -153,7 +153,7 @@ func TestUndo(t *testing.T) {
 		}
 
 		beforeRoots := p.GetRoots()
-		beforeStr := p.String()
+		beforeStr := String(&p)
 
 		modifyAdds := make([]Leaf, len(test.modifyAdds))
 		for i := range modifyAdds {
@@ -176,7 +176,7 @@ func TestUndo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("TestUndo failed %d: error %v", i, err)
 		}
-		afterStr := p.String()
+		afterStr := String(&p)
 
 		err = p.posMapSanity()
 		if err != nil {
@@ -211,7 +211,7 @@ func TestUndo(t *testing.T) {
 				afterStr)
 			t.Fatal(err)
 		}
-		undoStr := p.String()
+		undoStr := String(&p)
 
 		afterRoots := p.GetRoots()
 		if !reflect.DeepEqual(beforeRoots, afterRoots) {
@@ -569,7 +569,7 @@ func FuzzModify(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		beforeStr := p.String()
+		beforeStr := String(&p)
 		beforeMap := nodeMapToString(p.NodeMap)
 
 		modifyLeaves, _, _ := getAddsAndDels(uint32(p.NumLeaves), modifyAdds, 0)
@@ -577,7 +577,7 @@ func FuzzModify(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		afterStr := p.String()
+		afterStr := String(&p)
 		afterMap := nodeMapToString(p.NodeMap)
 
 		err = p.checkHashes()
@@ -735,7 +735,7 @@ func FuzzUndo(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		beforeStr := p.String()
+		beforeStr := String(&p)
 
 		beforeRoots := p.GetRoots()
 		beforeMap := nodeMapToString(p.NodeMap)
@@ -761,7 +761,7 @@ func FuzzUndo(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		afterStr := p.String()
+		afterStr := String(&p)
 		afterMap := nodeMapToString(p.NodeMap)
 
 		err = p.Undo(uint64(modifyAdds), bp.Targets, dels, beforeRoots)
@@ -797,7 +797,7 @@ func FuzzUndo(f *testing.F) {
 				afterMap)
 			t.Fatal(err)
 		}
-		undoStr := p.String()
+		undoStr := String(&p)
 		undoMap := nodeMapToString(p.NodeMap)
 
 		// Check that all the parent hashes are correct after the undo.

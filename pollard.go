@@ -51,6 +51,11 @@ func NewAccumulator(full bool) Pollard {
 	return p
 }
 
+// GetNumLeaves returns the total number of leaves added to the accumulator.
+func (p *Pollard) GetNumLeaves() uint64 {
+	return p.NumLeaves
+}
+
 // Modify takes in the additions and deletions and updates the accumulator accordingly.
 //
 // NOTE Modify does NOT do any validation and assumes that all the positions of the leaves

@@ -82,7 +82,7 @@ func FuzzStump(f *testing.F) {
 			if p.Roots[i].data != stump.Roots[i] {
 				t.Fatalf("FuzzStump fail: Roots do not equal between pollard and stump."+
 					"\nStump:\n%s\nPollard:\n%s\n%s\n",
-					printHashes(stump.Roots), printPolNodes(p.Roots), p.String())
+					printHashes(stump.Roots), printPolNodes(p.Roots), String(&p))
 			}
 		}
 
@@ -126,7 +126,7 @@ func FuzzStump(f *testing.F) {
 			if p.Roots[i].data != stump.Roots[i] {
 				t.Fatalf("FuzzStump fail: Roots do not equal between pollard and stump."+
 					"\nStump:\n%s\nPollard:\n%s\n%s\n",
-					printHashes(stump.Roots), printPolNodes(p.Roots), p.String())
+					printHashes(stump.Roots), printPolNodes(p.Roots), String(&p))
 			}
 		}
 	})
@@ -195,7 +195,7 @@ func FuzzStumpChain(f *testing.F) {
 				if p.Roots[i].data != stump.Roots[i] {
 					t.Fatalf("FuzzStumpChain fail at block %d: Roots do not equal between pollard and stump."+
 						"\nStump:\n%s\nPollard:\n%s\n%s\n", b,
-						printHashes(stump.Roots), printPolNodes(p.Roots), p.String())
+						printHashes(stump.Roots), printPolNodes(p.Roots), String(&p))
 				}
 			}
 		}
@@ -316,7 +316,7 @@ func checkUpdateData(updateData UpdateData, adds, delHashes, prevRoots []Hash, p
 		if p.Roots[i].data != stumpCopy.Roots[i] {
 			err := fmt.Errorf("Roots do not equal between pollard and stump."+
 				"\nStump:\n%s\nPollard:\n%s\n%s\n",
-				printHashes(stump.Roots), printPolNodes(p.Roots), p.String())
+				printHashes(stump.Roots), printPolNodes(p.Roots), String(p))
 			return err
 		}
 	}
