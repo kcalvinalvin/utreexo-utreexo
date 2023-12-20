@@ -815,6 +815,11 @@ func (m *MapPollard) VerifyPartialProof(origTargets []uint64, delHashes, proofHa
 		proofPositions = translatePositions(proofPositions, treeRows(m.NumLeaves), m.TotalRows)
 	}
 
+	// If we have enough proofs then skip the proof hash fetching code.
+	if len(proofHashes) == len(proofPositions) {
+		return m.Verify(delHashes, Proof{origTargets, proofHashes}, remember)
+	}
+
 	// Where we'll merge the hashes that we already have with the proofHashes provided.
 	allProofHashes := make([]Hash, 0, len(proofPositions))
 
