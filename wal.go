@@ -77,6 +77,41 @@ const (
 	bestHashOffset = 32 // byte offset of the consistency hash in the metadata file
 )
 
+// walTarget is the interface for files managed by the WAL. It combines
+// forestFile (for reads/writes) with dirty-buffer tracking for crash-safe
+// atomic commits. Both *mmapFile (data, addIndex) and *cachedRWS (meta)
+// implement this interface.
+type walTarget interface {
+	forestFile
+
+	// forEachDirty iterates over all dirty (buffered) entries.
+	forEachDirty(fn func(offset int64, data []byte))
+
+	// dirtyCount returns the number of dirty entries.
+	dirtyCount() int
+
+	// dirtyEntrySize returns the fixed size of each dirty entry in bytes.
+	dirtyEntrySize() int
+
+	// flushNeeded returns true if the dirty buffer has exceeded its
+	// memory threshold.
+	flushNeeded() bool
+
+	// applyDirty copies all dirty entries into the underlying storage
+	// (mmap data[] or underlying file). Does NOT clear the dirty buffer.
+	applyDirty() error
+
+	// syncUnderlying fsyncs the underlying storage.
+	syncUnderlying() error
+
+	// resetAfterFlush clears the dirty buffer and updates internal size
+	// tracking to reflect the current storage state.
+	resetAfterFlush() error
+
+	// discard drops all dirty entries without applying them.
+	discard()
+}
+
 // walFile represents an underlying file with its entry size and cache config.
 type walFile struct {
 	File          forestFile

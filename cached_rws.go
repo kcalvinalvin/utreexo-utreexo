@@ -235,6 +235,59 @@ func (c *cachedRWS) resetAfterFlush() error {
 	return nil
 }
 
+// Assert that cachedRWS implements walTarget.
+var _ walTarget = (*cachedRWS)(nil)
+
+// forEachDirty iterates over all dirty entries in the cache.
+func (c *cachedRWS) forEachDirty(fn func(offset int64, data []byte)) {
+	c.cache.forEach(fn)
+}
+
+// dirtyCount returns the number of dirty entries.
+func (c *cachedRWS) dirtyCount() int {
+	return c.cache.count()
+}
+
+// dirtyEntrySize returns the fixed entry size.
+func (c *cachedRWS) dirtyEntrySize() int {
+	return c.cache.entrySize()
+}
+
+// flushNeeded returns true if the cache has exceeded its memory threshold.
+func (c *cachedRWS) flushNeeded() bool {
+	return c.cache.overflowed()
+}
+
+// applyDirty writes all cached entries to the underlying file without
+// clearing the cache.
+func (c *cachedRWS) applyDirty() error {
+	var applyErr error
+	c.cache.forEach(func(offset int64, data []byte) {
+		if applyErr != nil {
+			return
+		}
+		if _, err := c.underlying.Seek(offset, io.SeekStart); err != nil {
+			applyErr = err
+			return
+		}
+		if _, err := c.underlying.Write(data); err != nil {
+			applyErr = err
+			return
+		}
+	})
+	return applyErr
+}
+
+// syncUnderlying fsyncs the underlying file.
+func (c *cachedRWS) syncUnderlying() error {
+	return syncFile(c.underlying)
+}
+
+// discard drops all buffered writes without touching the underlying file.
+func (c *cachedRWS) discard() {
+	c.Discard()
+}
+
 // Truncate truncates the underlying file to the specified size.
 // It also invalidates any cached writes beyond the new size and updates
 // the internal size tracking.
