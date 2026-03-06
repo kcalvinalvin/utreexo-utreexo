@@ -345,24 +345,30 @@ func OpenForest(dbpath string, opts ...ForestOption) (*Forest, error) {
 		addIndexCacheBytes = o.maxCacheMemory * addIndexEntrySize / totalEntrySize
 	}
 
-	// Create walTargets. closeAll is a cleanup helper used on error paths.
+	// Create walTargets. Data and addIndex use mmapFile (mmap-backed with
+	// dirty tracking) for zero-copy reads. Meta uses cachedRWS (tiny file).
+	// closeAll is a cleanup helper used on error paths.
 	closeAll := func() {
 		for _, c := range closers {
 			c.Close()
 		}
 	}
 
-	dataTarget, err := newCachedRWS(dataFile, dataEntrySize, dataCacheBytes)
+	dataMaxSize := int64(maxPosition(defaultForestRows)+1) * dataEntrySize
+	dataTarget, err := newMmapFile(dataFile, dataMaxSize, dataEntrySize, dataCacheBytes)
 	if err != nil {
 		closeAll()
 		return nil, fmt.Errorf("create data target: %w", err)
 	}
+	closers[0] = dataTarget // mmapFile owns the file now (munmap + truncate + close)
 
-	addIndexTarget, err := newCachedRWS(addIndexFile, addIndexEntrySize, addIndexCacheBytes)
+	addIndexMaxSize := int64(maxPosition(defaultForestRows)+1) * addIndexEntrySize
+	addIndexTarget, err := newMmapFile(addIndexFile, addIndexMaxSize, addIndexEntrySize, addIndexCacheBytes)
 	if err != nil {
 		closeAll()
 		return nil, fmt.Errorf("create addIndex target: %w", err)
 	}
+	closers[2] = addIndexTarget // mmapFile owns the file now
 
 	metaTarget, err := newCachedRWS(metaFile, metaEntrySize, 0)
 	if err != nil {
@@ -628,11 +634,17 @@ func (f *Forest) readHash(position uint64) (Hash, error) {
 // writeHash writes the hash at the given position to the file.
 func (f *Forest) writeHash(position uint64, hash Hash) error {
 	offset := int64(position * 32)
+	if w, ok := f.file.(io.WriterAt); ok {
+		_, err := w.WriteAt(hash[:], offset)
+		if err != nil {
+			return fmt.Errorf("write at position %d: %w", position, err)
+		}
+		return nil
+	}
 	_, err := f.file.Seek(offset, io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("seek to position %d: %w", position, err)
 	}
-
 	n, err := f.file.Write(hash[:])
 	if err != nil {
 		return fmt.Errorf("write at position %d: %w", position, err)
@@ -640,7 +652,6 @@ func (f *Forest) writeHash(position uint64, hash Hash) error {
 	if n != 32 {
 		return fmt.Errorf("short write at position %d: wrote %d bytes", position, n)
 	}
-
 	return nil
 }
 
@@ -651,25 +662,29 @@ func (f *Forest) readAddIndex(pos uint64) (int32, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	var addIndex int32
-	err = binary.Read(f.addIndexFile, binary.LittleEndian, &addIndex)
+	var buf [4]byte
+	_, err = io.ReadFull(f.addIndexFile, buf[:])
 	if err != nil {
 		return 0, err
 	}
-
-	return addIndex, nil
+	return int32(binary.LittleEndian.Uint32(buf[:])), nil
 }
 
 // writeAddIndex writes the addIndex for the leaf at the given position.
 func (f *Forest) writeAddIndex(pos uint64, addIndex int32) error {
 	offset := int64(pos * 4)
+	var buf [4]byte
+	binary.LittleEndian.PutUint32(buf[:], uint32(addIndex))
+	if w, ok := f.addIndexFile.(io.WriterAt); ok {
+		_, err := w.WriteAt(buf[:], offset)
+		return err
+	}
 	_, err := f.addIndexFile.Seek(offset, io.SeekStart)
 	if err != nil {
 		return err
 	}
-
-	return binary.Write(f.addIndexFile, binary.LittleEndian, addIndex)
+	_, err = f.addIndexFile.Write(buf[:])
+	return err
 }
 
 // add adds a single leaf to the forest.
