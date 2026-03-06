@@ -38,16 +38,9 @@ func newCachedRWS(underlying forestFile, entrySize int, maxCacheBytes int64) (*c
 		maxCacheBytes = defaultMaxCacheMemory
 	}
 
-	var cache cacheStore
-	switch entrySize {
-	case 4:
-		cache = newCacheMap4(maxCacheBytes)
-	case 8:
-		cache = newCacheMap8(maxCacheBytes)
-	case 32:
-		cache = newCacheMap32(maxCacheBytes)
-	default:
-		return nil, fmt.Errorf("unsupported entry size %d (must be 4, 8, or 32)", entrySize)
+	cache, err := newCacheStore(entrySize, maxCacheBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	return &cachedRWS{
@@ -62,12 +55,8 @@ func newCachedRWS(underlying forestFile, entrySize int, maxCacheBytes int64) (*c
 // ReadAt reads len(p) bytes starting at byte offset off.
 // It checks the cache first, then falls through to the underlying file.
 func (c *cachedRWS) ReadAt(p []byte, off int64) (int, error) {
-	if cached, ok := c.cache.get(off); ok {
-		n := copy(p, cached)
-		if n < len(p) {
-			return n, io.EOF
-		}
-		return n, nil
+	if c.cache.copyTo(off, p) {
+		return len(p), nil
 	}
 	if off >= c.baseSize {
 		return 0, io.EOF
@@ -79,8 +68,8 @@ func (c *cachedRWS) ReadAt(p []byte, off int64) (int, error) {
 // the underlying file. Positions beyond the underlying file size
 // return zeros without touching the file.
 func (c *cachedRWS) Read(p []byte) (int, error) {
-	if cached, ok := c.cache.get(c.pos); ok {
-		n := copy(p, cached)
+	if c.cache.copyTo(c.pos, p) {
+		n := len(p)
 		c.pos += int64(n)
 		return n, nil
 	}
@@ -132,6 +121,38 @@ func (c *cachedRWS) Write(p []byte) (int, error) {
 	c.pos += int64(n)
 	if c.pos > c.maxWritten {
 		c.maxWritten = c.pos
+	}
+	return n, nil
+}
+
+// WriteAt stores data in the cache at the given offset without changing
+// the current seek position. This avoids the overhead of a separate
+// Seek + Write pair.
+func (c *cachedRWS) WriteAt(p []byte, off int64) (int, error) {
+	switch cache := c.cache.(type) {
+	case *cacheMap4:
+		if len(p) != 4 {
+			return 0, fmt.Errorf("expected 4 bytes, got %d", len(p))
+		}
+		cache.put4(off, [4]byte(p))
+	case *cacheMap8:
+		if len(p) != 8 {
+			return 0, fmt.Errorf("expected 8 bytes, got %d", len(p))
+		}
+		cache.put8(off, [8]byte(p))
+	case *cacheMap32:
+		if len(p) != 32 {
+			return 0, fmt.Errorf("expected 32 bytes, got %d", len(p))
+		}
+		cache.put32(off, [32]byte(p))
+	default:
+		return 0, fmt.Errorf("unsupported cache type %T", c.cache)
+	}
+
+	n := len(p)
+	end := off + int64(n)
+	if end > c.maxWritten {
+		c.maxWritten = end
 	}
 	return n, nil
 }
