@@ -332,12 +332,12 @@ func OpenForest(dbpath string, opts ...ForestOption) (*Forest, error) {
 
 	// Split memory budget proportionally by entry size so caches fill
 	// at similar rates. Entry sizes: data=32, addIndex=4, meta=32.
-	// When maxCacheMemory is 0 each walFile gets the WAL default (64MB).
+	// When maxCacheMemory is 0 each target gets the default (64MB).
 	const (
 		dataEntrySize     = 32
 		addIndexEntrySize = 4
 		metaEntrySize     = 32
-		totalEntrySize    = dataEntrySize + addIndexEntrySize // meta is tiny, use WAL default
+		totalEntrySize    = dataEntrySize + addIndexEntrySize // meta is tiny, use default
 	)
 	var dataCacheBytes, addIndexCacheBytes int64
 	if o.maxCacheMemory > 0 {
@@ -345,15 +345,34 @@ func OpenForest(dbpath string, opts ...ForestOption) (*Forest, error) {
 		addIndexCacheBytes = o.maxCacheMemory * addIndexEntrySize / totalEntrySize
 	}
 
-	wal, err := newWAL(journalFile, deletedFile,
-		walFile{File: dataFile, EntrySize: dataEntrySize, MaxCacheBytes: dataCacheBytes},
-		walFile{File: addIndexFile, EntrySize: addIndexEntrySize, MaxCacheBytes: addIndexCacheBytes},
-		walFile{File: metaFile, EntrySize: metaEntrySize},
-	)
-	if err != nil {
+	// Create walTargets. closeAll is a cleanup helper used on error paths.
+	closeAll := func() {
 		for _, c := range closers {
 			c.Close()
 		}
+	}
+
+	dataTarget, err := newCachedRWS(dataFile, dataEntrySize, dataCacheBytes)
+	if err != nil {
+		closeAll()
+		return nil, fmt.Errorf("create data target: %w", err)
+	}
+
+	addIndexTarget, err := newCachedRWS(addIndexFile, addIndexEntrySize, addIndexCacheBytes)
+	if err != nil {
+		closeAll()
+		return nil, fmt.Errorf("create addIndex target: %w", err)
+	}
+
+	metaTarget, err := newCachedRWS(metaFile, metaEntrySize, 0)
+	if err != nil {
+		closeAll()
+		return nil, fmt.Errorf("create meta target: %w", err)
+	}
+
+	wal, err := newWAL(journalFile, deletedFile, dataTarget, addIndexTarget, metaTarget)
+	if err != nil {
+		closeAll()
 		return nil, fmt.Errorf("create wal: %w", err)
 	}
 
@@ -361,15 +380,13 @@ func OpenForest(dbpath string, opts ...ForestOption) (*Forest, error) {
 	slotsPath := filepath.Join(dbpath, forestPosMapSlotsFileName)
 
 	f, err := newForest(
-		wal.Cached(0), wal.Cached(1), wal.Cached(2),
+		wal.Target(0), wal.Target(1), wal.Target(2),
 		wal.Bitmap(),
 		ctrlPath, slotsPath,
 		defaultForestRows,
 	)
 	if err != nil {
-		for _, c := range closers {
-			c.Close()
-		}
+		closeAll()
 		return nil, fmt.Errorf("create forest: %w", err)
 	}
 

@@ -658,17 +658,14 @@ func TestForestNoFlushBeforeWAL(t *testing.T) {
 	underlyingAddIdxFile := newMemFile()
 	underlyingMetaFile := newMemFile()
 
-	// WAL wraps files in cachedRWS (except bitmap) so writes are buffered.
-	w, err := newWAL(journal, underlyingDelFile,
-		walFile{File: underlyingFile, EntrySize: 32},
-		walFile{File: underlyingAddIdxFile, EntrySize: 4},
-		walFile{File: underlyingMetaFile, EntrySize: 32},
-	)
+	// WAL wraps files in walTargets (except bitmap) so writes are buffered.
+	mainTarget, addIdxTarget, metaTarget := newTestTargets(t, underlyingFile, underlyingAddIdxFile, underlyingMetaFile)
+	w, err := newWAL(journal, underlyingDelFile, mainTarget, addIdxTarget, metaTarget)
 	require.NoError(t, err)
 
 	// Create forest backed by the WAL.
 	tmpDir := t.TempDir()
-	forest, err := newForest(w.Cached(0), w.Cached(1), w.Cached(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 10)
+	forest, err := newForest(w.Target(0), w.Target(1), w.Target(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 10)
 	require.NoError(t, err)
 
 	// Reference pollard for correctness comparison.
@@ -742,15 +739,12 @@ func TestForestCrashRecovery(t *testing.T) {
 	addIdxFile := newMemFile()
 	metaFile := newMemFile()
 
-	w, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget, addIdxTarget, metaTarget := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w, err := newWAL(journal, delFile, mainTarget, addIdxTarget, metaTarget)
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
-	forest, err := newForest(w.Cached(0), w.Cached(1), w.Cached(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 16)
+	forest, err := newForest(w.Target(0), w.Target(1), w.Target(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 16)
 	require.NoError(t, err)
 
 	pollard := NewAccumulator()
@@ -796,16 +790,13 @@ func TestForestCrashRecovery(t *testing.T) {
 		"underlying files should still reflect block 200")
 
 	// ---- "Restart": new WAL recovers from journal ----
-	w2, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget2, addIdxTarget2, metaTarget2 := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w2, err := newWAL(journal, delFile, mainTarget2, addIdxTarget2, metaTarget2)
 	require.NoError(t, err)
 
 	tmpDir3 := t.TempDir()
 	recoveredForest, err := newForest(
-		w2.Cached(0), w2.Cached(1), w2.Cached(2), w2.Bitmap(),
+		w2.Target(0), w2.Target(1), w2.Target(2), w2.Bitmap(),
 		tmpDir3+"/ctrl", tmpDir3+"/slots", 16,
 	)
 	require.NoError(t, err)
@@ -831,15 +822,12 @@ func TestForestCrashIncompleteJournal(t *testing.T) {
 	addIdxFile := newMemFile()
 	metaFile := newMemFile()
 
-	w, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget, addIdxTarget, metaTarget := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w, err := newWAL(journal, delFile, mainTarget, addIdxTarget, metaTarget)
 	require.NoError(t, err)
 
 	tmpDir := t.TempDir()
-	forest, err := newForest(w.Cached(0), w.Cached(1), w.Cached(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 16)
+	forest, err := newForest(w.Target(0), w.Target(1), w.Target(2), w.Bitmap(), tmpDir+"/ctrl", tmpDir+"/slots", 16)
 	require.NoError(t, err)
 
 	pollard := NewAccumulator()
@@ -873,17 +861,14 @@ func TestForestCrashIncompleteJournal(t *testing.T) {
 	require.NoError(t, w.crashBeforeCommit())
 
 	// "Restart": new WAL should discard the incomplete journal.
-	w2, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget2, addIdxTarget2, metaTarget2 := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w2, err := newWAL(journal, delFile, mainTarget2, addIdxTarget2, metaTarget2)
 	require.NoError(t, err)
 
 	// Forest should be back at the block-200 state.
 	tmpDir2 := t.TempDir()
 	recoveredForest, err := newForest(
-		w2.Cached(0), w2.Cached(1), w2.Cached(2), w2.Bitmap(),
+		w2.Target(0), w2.Target(1), w2.Target(2), w2.Bitmap(),
 		tmpDir2+"/ctrl", tmpDir2+"/slots", 16,
 	)
 	require.NoError(t, err)
@@ -947,16 +932,13 @@ func TestForestUndoAfterRebuild(t *testing.T) {
 	addIdxFile := newMemFile()
 	metaFile := newMemFile()
 
-	w, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget, addIdxTarget, metaTarget := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w, err := newWAL(journal, delFile, mainTarget, addIdxTarget, metaTarget)
 	require.NoError(t, err)
 
 	tmpDir1 := t.TempDir()
 	forest, err := newForest(
-		w.Cached(0), w.Cached(1), w.Cached(2), w.Bitmap(),
+		w.Target(0), w.Target(1), w.Target(2), w.Bitmap(),
 		tmpDir1+"/ctrl", tmpDir1+"/slots", 10,
 	)
 	require.NoError(t, err)
@@ -1009,16 +991,13 @@ func TestForestUndoAfterRebuild(t *testing.T) {
 	require.NoError(t, w.Flush([32]byte{}))
 
 	// Restart: new WAL + new tmpDir forces Swiss Table rebuild.
-	w2, err := newWAL(journal, delFile,
-		walFile{File: mainFile, EntrySize: 32},
-		walFile{File: addIdxFile, EntrySize: 4},
-		walFile{File: metaFile, EntrySize: 32},
-	)
+	mainTarget2, addIdxTarget2, metaTarget2 := newTestTargets(t, mainFile, addIdxFile, metaFile)
+	w2, err := newWAL(journal, delFile, mainTarget2, addIdxTarget2, metaTarget2)
 	require.NoError(t, err)
 
 	tmpDir2 := t.TempDir()
 	forest2, err := newForest(
-		w2.Cached(0), w2.Cached(1), w2.Cached(2), w2.Bitmap(),
+		w2.Target(0), w2.Target(1), w2.Target(2), w2.Bitmap(),
 		tmpDir2+"/ctrl", tmpDir2+"/slots", 10,
 	)
 	require.NoError(t, err)
