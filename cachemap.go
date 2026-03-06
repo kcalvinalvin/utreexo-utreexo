@@ -1,16 +1,39 @@
 package utreexo
 
-import "github.com/utreexo/utreexo/internal/sizehelper"
+import (
+	"fmt"
+
+	"github.com/utreexo/utreexo/internal/sizehelper"
+)
 
 const (
-	// defaultMaxCacheMemory is 64MB per cachedRWS.
+	// defaultMaxCacheMemory is the default dirty-buffer size (64MB).
 	defaultMaxCacheMemory = 64 << 20
 )
+
+// newCacheStore creates a cacheStore for the given fixed entry size.
+func newCacheStore(entrySize int, maxCacheBytes int64) (cacheStore, error) {
+	switch entrySize {
+	case 4:
+		return newCacheMap4(maxCacheBytes), nil
+	case 8:
+		return newCacheMap8(maxCacheBytes), nil
+	case 32:
+		return newCacheMap32(maxCacheBytes), nil
+	default:
+		return nil, fmt.Errorf("unsupported entry size %d (must be 4, 8, or 32)", entrySize)
+	}
+}
 
 // cacheStore is the interface for underlying cache storage.
 type cacheStore interface {
 	// get retrieves the data at the given offset. Returns false if not found.
 	get(offset int64) ([]byte, bool)
+
+	// copyTo copies the cached data at offset into dst and returns true.
+	// Returns false if not found. This avoids the heap allocation that
+	// get incurs when returning a []byte slice of a fixed-size array.
+	copyTo(offset int64, dst []byte) bool
 
 	// delete removes the entry at the given offset.
 	delete(offset int64)
@@ -76,6 +99,20 @@ func (cms *cacheMap32) get(offset int64) ([]byte, bool) {
 		return data[:], true
 	}
 	return nil, false
+}
+
+func (cms *cacheMap32) copyTo(offset int64, dst []byte) bool {
+	for _, m := range cms.maps {
+		if data, ok := m[offset]; ok {
+			copy(dst, data[:])
+			return true
+		}
+	}
+	if data, ok := cms.overflow[offset]; ok {
+		copy(dst, data[:])
+		return true
+	}
+	return false
 }
 
 func (cms *cacheMap32) put32(offset int64, data [32]byte) {
@@ -194,6 +231,20 @@ func (cms *cacheMap8) get(offset int64) ([]byte, bool) {
 	return nil, false
 }
 
+func (cms *cacheMap8) copyTo(offset int64, dst []byte) bool {
+	for _, m := range cms.maps {
+		if data, ok := m[offset]; ok {
+			copy(dst, data[:])
+			return true
+		}
+	}
+	if data, ok := cms.overflow[offset]; ok {
+		copy(dst, data[:])
+		return true
+	}
+	return false
+}
+
 func (cms *cacheMap8) put8(offset int64, data [8]byte) {
 	for _, m := range cms.maps {
 		if _, ok := m[offset]; ok {
@@ -308,6 +359,20 @@ func (cms *cacheMap4) get(offset int64) ([]byte, bool) {
 		return data[:], true
 	}
 	return nil, false
+}
+
+func (cms *cacheMap4) copyTo(offset int64, dst []byte) bool {
+	for _, m := range cms.maps {
+		if data, ok := m[offset]; ok {
+			copy(dst, data[:])
+			return true
+		}
+	}
+	if data, ok := cms.overflow[offset]; ok {
+		copy(dst, data[:])
+		return true
+	}
+	return false
 }
 
 func (cms *cacheMap4) put4(offset int64, data [4]byte) {
